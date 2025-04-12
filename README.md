@@ -1,7 +1,7 @@
 # dbgdtct
 
 ## Desctiption
-dbgdtct is a python tool that will help you detect if the web application is deployed in debug mode 
+dbgdtct is a Python-based tool designed to help you detect if a web application is deployed in debug mode—a critical misconfiguration that can expose sensitive information and increase the risk of exploitation in production environments.
 
 ## Installation
 ```
