@@ -26,11 +26,11 @@ pip3 install aiohttp requests
 
 To scan a single target application
 ```
-python dbgdtct.py -u https://target.com 
+python dbdtct.py -u https://target.com 
 ```
 To scan multiple targets and URLs
 ```
-python dbgdtct.py -l list.txt
+python dbdtct.py -l list.txt
 ```
 
 ## example
