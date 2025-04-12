@@ -4,7 +4,6 @@ import concurrent.futures
 import asyncio
 import aiohttp
 from urllib.parse import urljoin, urlparse
-from typing import List, Tuple, Set
 import time
 import socket
 from datetime import datetime
@@ -12,8 +11,11 @@ from datetime import datetime
 # Disable SSL warnings
 requests.packages.urllib3.disable_warnings()
 
-# Debug patterns
-DEBUG_PATTERNS = {pattern.lower() for pattern in [
+# Current information
+CURRENT_DATE = "2025-04-12 21:33:21"
+CURRENT_USER = "yousseflahouifi"
+
+DEBUG_PATTERNS = [
     "DisallowedHost at",
     "phpdebugbar",
     "Whoops! There was an error",
@@ -47,7 +49,7 @@ DEBUG_PATTERNS = {pattern.lower() for pattern in [
     "ActiveRecord::",
     "Rails.root:",
     "rack.session"
-]}
+]
 
 KNOWN_DEBUG_PATHS = [
     "symfony/profiler",
@@ -73,10 +75,12 @@ KNOWN_DEBUG_PATHS = [
 ]
 
 METHODS = ["GET", "POST", "PUT"]
-MALFORMED_JSON = ['{"foo":"bar"']
+MALFORMED_JSON = [
+'{"foo":"bar"'
+]
 
 class DebugDetector:
-    def __init__(self, max_workers: int = 20, timeout: int = 5):
+    def __init__(self, max_workers=20, timeout=5):
         self.max_workers = max_workers
         self.timeout = timeout
         self.session = None
@@ -87,7 +91,6 @@ class DebugDetector:
         }
 
     async def init_session(self):
-        """Initialize aiohttp session with connection pooling"""
         if not self.session:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             connector = aiohttp.TCPConnector(limit=self.max_workers, ssl=False)
@@ -97,16 +100,14 @@ class DebugDetector:
                 headers=self.headers
             )
 
-    def check_debug_patterns(self, response_text: str) -> str:
-        """Check for debug patterns in response text using set operations"""
+    def check_debug_patterns(self, response_text):
         response_lower = response_text.lower()
         for pattern in DEBUG_PATTERNS:
-            if pattern in response_lower:
+            if pattern.lower() in response_lower:
                 return pattern
         return None
 
-    async def make_request(self, url: str, method: str = 'GET', data: dict = None) -> Tuple[int, str]:
-        """Make an HTTP request with error handling"""
+    async def make_request(self, url, method='GET', data=None):
         try:
             headers = self.headers.copy()
             if data and isinstance(data, str) and data.startswith('{'):
@@ -122,11 +123,10 @@ class DebugDetector:
                     return 404, ""
                 text = await response.text()
                 return response.status, text
-        except (aiohttp.ClientError, asyncio.TimeoutError, Exception):
+        except:
             return 0, ""
 
-    async def check_url(self, url: str) -> Tuple[str, List[Tuple[str, str]]]:
-        """Check a single URL for debug mode"""
+    async def check_url(self, url):
         results = []
         
         # Basic GET request
@@ -142,7 +142,8 @@ class DebugDetector:
             status, text = await self.make_request(url, method=method)
             if status == 404:
                 continue
-            if match := self.check_debug_patterns(text):
+            match = self.check_debug_patterns(text)
+            if match:
                 results.append((f"HTTP Method {method}", match))
 
         # Test malformed JSON payloads
@@ -153,8 +154,10 @@ class DebugDetector:
                     method='POST', 
                     data=malformed
                 )
-                if status != 404 and (match := self.check_debug_patterns(text)):
-                    results.append((f"Malformed JSON ({malformed})", match))
+                if status != 404:
+                    match = self.check_debug_patterns(text)
+                    if match:
+                        results.append((f"Malformed JSON ({malformed})", match))
             except:
                 continue
 
@@ -165,9 +168,11 @@ class DebugDetector:
             ip_url = url.replace(parsed.hostname, ip)
             
             status, text = await self.make_request(ip_url)
-            if status != 404 and (match := self.check_debug_patterns(text)):
-                results.append(("IP-based access", match))
-        except Exception:
+            if status != 404:
+                match = self.check_debug_patterns(text)
+                if match:
+                    results.append(("IP-based access", match))
+        except:
             pass
 
         # Check debug paths
@@ -180,13 +185,13 @@ class DebugDetector:
         for path, (status, text) in zip(KNOWN_DEBUG_PATHS, debug_responses):
             if status == 404:
                 continue
-            if match := self.check_debug_patterns(text):
+            match = self.check_debug_patterns(text)
+            if match:
                 results.append((f"Debug path: {path}", match))
 
         return url, results
 
-    async def scan_urls(self, urls: List[str]):
-        """Scan multiple URLs concurrently"""
+    async def scan_urls(self, urls):
         await self.init_session()
         tasks = [self.check_url(url) for url in urls]
         results = await asyncio.gather(*tasks)
@@ -230,7 +235,7 @@ async def main():
         parser.error("No URLs provided. Use -u or -l option.")
 
     start_time = time.time()
-    print(f"[*] Starting scan at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"[*] Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"[*] Testing {len(urls)} target(s)")
     
     detector = DebugDetector(max_workers=args.workers)
