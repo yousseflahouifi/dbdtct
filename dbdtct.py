@@ -6,11 +6,13 @@ import aiohttp
 from urllib.parse import urljoin, urlparse
 from typing import List, Tuple, Set
 import time
+import socket
+from datetime import datetime
 
 # Disable SSL warnings
 requests.packages.urllib3.disable_warnings()
 
-# Move constants outside class for better memory usage
+# Debug patterns
 DEBUG_PATTERNS = {pattern.lower() for pattern in [
     "DisallowedHost at",
     "phpdebugbar",
@@ -54,11 +56,24 @@ KNOWN_DEBUG_PATHS = [
     "debug/default/view",
     "__debug__",
     "_profiler",
-    "phpinfo.php"
+    "phpinfo.php",
+    "debug/",
+    "console/",
+    "admin/console",
+    "api/debug",
+    "dev.php",
+    "dev",
+    "test.php",
+    "test",
+    "tests/",
+    ".env",
+    "config.php",
+    "config.yml",
+    "configuration.php"
 ]
 
 METHODS = ["GET", "POST", "PUT"]
-MALFORMED_JSON = ['{\"kk\":\"\";', '{\"incomplete\":true']
+MALFORMED_JSON = ['{"foo":"bar"']
 
 class DebugDetector:
     def __init__(self, max_workers: int = 20, timeout: int = 5):
@@ -93,12 +108,21 @@ class DebugDetector:
     async def make_request(self, url: str, method: str = 'GET', data: dict = None) -> Tuple[int, str]:
         """Make an HTTP request with error handling"""
         try:
-            async with getattr(self.session, method.lower())(url, data=data) as response:
+            headers = self.headers.copy()
+            if data and isinstance(data, str) and data.startswith('{'):
+                headers['Content-Type'] = 'application/json'
+                
+            async with getattr(self.session, method.lower())(
+                url, 
+                data=data,
+                headers=headers,
+                ssl=False
+            ) as response:
                 if response.status == 404:
                     return 404, ""
                 text = await response.text()
                 return response.status, text
-        except (aiohttp.ClientError, asyncio.TimeoutError):
+        except (aiohttp.ClientError, asyncio.TimeoutError, Exception):
             return 0, ""
 
     async def check_url(self, url: str) -> Tuple[str, List[Tuple[str, str]]]:
@@ -120,6 +144,31 @@ class DebugDetector:
                 continue
             if match := self.check_debug_patterns(text):
                 results.append((f"HTTP Method {method}", match))
+
+        # Test malformed JSON payloads
+        for malformed in MALFORMED_JSON:
+            try:
+                status, text = await self.make_request(
+                    url, 
+                    method='POST', 
+                    data=malformed
+                )
+                if status != 404 and (match := self.check_debug_patterns(text)):
+                    results.append((f"Malformed JSON ({malformed})", match))
+            except:
+                continue
+
+        # Try accessing by IP
+        try:
+            parsed = urlparse(url)
+            ip = socket.gethostbyname(parsed.hostname)
+            ip_url = url.replace(parsed.hostname, ip)
+            
+            status, text = await self.make_request(ip_url)
+            if status != 404 and (match := self.check_debug_patterns(text)):
+                results.append(("IP-based access", match))
+        except Exception:
+            pass
 
         # Check debug paths
         debug_tasks = []
@@ -148,15 +197,17 @@ class DebugDetector:
         return results
 
 def print_banner():
-    logo = r'''
+    logo = f'''
   ,--.,--.      ,--.  ,--.          ,--.   
  ,-|  ||  |-.  ,-|  |,-'  '-. ,---.,-'  '-. 
 ' .-. || .-. '' .-. |'-.  .-'| .--''-.  .-' 
-\ `-' || `-' |\ `-' |  |  |  \ `--.  |  |   
+\\ `-' || `-' |\\ `-' |  |  |  \\ `--.  |  |   
  `---'  `---'  `---'   `--'   `---'  `--'   
             dbdtct — Web Debug Mode Detection Tool
-            Created by: Youssef Lahouifi
-            Supervised by: Redouane Korchiyne
+            Created by: {CURRENT_USER}
+            Date: {CURRENT_DATE}
+            
+[ Debug Mode Scanner - Test various methods to detect debug mode ]
 '''
     print(logo)
 
@@ -179,12 +230,17 @@ async def main():
         parser.error("No URLs provided. Use -u or -l option.")
 
     start_time = time.time()
+    print(f"[*] Starting scan at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"[*] Testing {len(urls)} target(s)")
+    
     detector = DebugDetector(max_workers=args.workers)
     results = await detector.scan_urls(urls)
 
     # Print results
+    vulnerable_count = 0
     for url, findings in results:
         if findings:
+            vulnerable_count += 1
             print(f"\n[+] Potential Debug Mode Detected on {url}")
             for method, match in findings:
                 print(f"    -> Technique: {method}")
@@ -192,7 +248,12 @@ async def main():
         else:
             print(f"[-] No debug patterns found on {url}")
 
-    print(f"\nScan completed in {time.time() - start_time:.2f} seconds")
+    scan_time = time.time() - start_time
+    print(f"\n[*] Scan Summary:")
+    print(f"    -> Completed in: {scan_time:.2f} seconds")
+    print(f"    -> Targets scanned: {len(urls)}")
+    print(f"    -> Vulnerable targets: {vulnerable_count}")
+    print(f"    -> Success rate: {(vulnerable_count/len(urls))*100:.1f}%")
 
 if __name__ == '__main__':
     asyncio.run(main())
