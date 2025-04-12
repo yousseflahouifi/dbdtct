@@ -11,9 +11,6 @@ from datetime import datetime
 # Disable SSL warnings
 requests.packages.urllib3.disable_warnings()
 
-# Current information
-CURRENT_DATE = "2025-04-12 21:33:21"
-CURRENT_USER = "yousseflahouifi"
 
 DEBUG_PATTERNS = [
     "DisallowedHost at",
@@ -209,8 +206,8 @@ def print_banner():
 \\ `-' || `-' |\\ `-' |  |  |  \\ `--.  |  |   
  `---'  `---'  `---'   `--'   `---'  `--'   
             dbdtct — Web Debug Mode Detection Tool
-            Created by: {CURRENT_USER}
-            Date: {CURRENT_DATE}
+            Created by: Youssef Lahouifi
+            Supervised by : Redouan Korchiyne
             
 [ Debug Mode Scanner - Test various methods to detect debug mode ]
 '''
